@@ -1,0 +1,75 @@
+/* ── Design tokens ───────────────────────────────────────────────── */
+:root {
+  --bg-primary:   #0c0e11;
+  --bg-surface:   #131720;
+  --bg-elevated:  #1a2030;
+  --border:       #22293a;
+  --border-accent: #1e4060;
+  --cyan:         #00c8d4;
+  --blue:         #43A3DB;
+  --gold:         #c89b3c;
+  --text:         rgba(220, 218, 215, 0.92);
+  --text-muted:   rgba(180, 178, 175, 0.5);
+}
+
+/* ── Base ────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Helvetica Neue, Helvetica, sans-serif;
+  color: var(--text);
+  background-color: var(--bg-primary);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#wrapper {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+a {
+  color: var(--blue);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+a:hover { color: var(--cyan); }
+
+h2 {
+  margin-bottom: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+ul {
+  margin-block-start: 1em;
+  margin-block-end: 2em;
+}
+li {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.article {
+  padding: 0 35px 40px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+@media only screen and (max-width: 600px) {
+  .article {
+    padding: 0 10px 24px;
+  }
+}
+
+/* ── Utility ─────────────────────────────────────────────────────── */
+.noselect {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
