@@ -77,6 +77,8 @@
 			</div>
 			<h2 id="wait_solving"></h2>
 			<div class="button-row">
+				<button class="myButton" onclick="document.getElementById('import_input').click()">📷 Importer screenshot</button>
+				<input type="file" id="import_input" accept="image/*" style="display:none" onchange="import_screenshot(event)">
 				<button id="barring_button" class="myButton" onclick='mouse_barring_mode()'>Barring mode</button>
 				<button class="myButton" onclick="solve_wrapper()">Solve</button>
 				<button class="myButton" onclick="reset()">Reset</button>
@@ -2000,6 +2002,274 @@
 		max_depth = 10000;
 		current_path = null;
 	}
+
+	// Table des couleurs des aspects (extrait du mod)
+const aspect_colors = {
+    'aer':        [0xFF, 0xFF, 0xFE],
+    'terra':      [0x56, 0x70, 0x00],
+    'ignis':      [0xFF, 0x66, 0x01],
+    'aqua':       [0x3C, 0xAE, 0xFC],
+    'ordo':       [0xD5, 0xD5, 0xAC],
+    'perditio':   [0x40, 0x40, 0x40],
+    'vacuos':     [0x88, 0x88, 0x88],
+    'lux':        [0xFF, 0xFF, 0x63],
+    'tempestas':  [0xFF, 0xFF, 0xFF],
+    'motus':      [0xCD, 0xCD, 0x74],
+    'gelum':      [0xE2, 0xE2, 0xFF],
+    'vitreus':    [0x81, 0x81, 0xFF],
+    'victus':     [0xDE, 0x34, 0x05],
+    'venenum':    [0x8A, 0x00, 0x00],
+    'potentia':   [0xC0, 0xC0, 0xFF],
+    'permutatio': [0x57, 0x87, 0x57],
+    'metallum':   [0xB5, 0x99, 0x8D],
+    'mortuus':    [0x88, 0x84, 0x88],
+    'volatus':    [0xE7, 0xC7, 0xD7],
+    'tenebrae':   [0x22, 0x22, 0x22],
+    'spiritus':   [0xEB, 0xC3, 0xFB],
+    'sano':       [0xFF, 0x63, 0x74],
+    'iter':       [0xE0, 0xAD, 0x9B],
+    'alienis':    [0x80, 0x80, 0x00],
+    'praecantatio':[0x96, 0x80, 0x00],
+    'auram':      [0xFF, 0xC0, 0xFF],
+    'vitium':     [0x80, 0x00, 0x80],
+    'limus':      [0x00, 0xF8, 0x00],
+    'herba':      [0x00, 0xAC, 0x00],
+    'arbor':      [0x87, 0x90, 0x71],
+    'bestia':     [0x9F, 0x6F, 0x09],
+    'corpus':     [0xEE, 0x82, 0xED],
+    'exanimis':   [0x3A, 0x40, 0x00],
+    'cognitio':   [0xFF, 0xC3, 0xF3],
+    'sensus':     [0x0F, 0x00, 0xFF],
+    'humanus':    [0xFF, 0xD6, 0x00],
+    'messis':     [0xE1, 0xB1, 0x71],
+    'perfodio':   [0xDC, 0xA8, 0x58],
+    'instrumentum':[0x40, 0x40, 0x6E],
+    'meto':       [0xEE, 0x82, 0x02],
+    'telum':      [0xC0, 0x60, 0x50],
+    'tutamen':    [0x00, 0xC1, 0x00],
+    'fames':      [0x9A, 0x3D, 0x05],
+    'lucrum':     [0xE6, 0xC1, 0x04],
+    'fabrico':    [0x80, 0xA0, 0x00],
+    'pannus':     [0xEB, 0x82, 0xC2],
+    'machina':    [0x80, 0x80, 0xA0],
+    'vinculum':   [0x9A, 0xC0, 0x00],
+};
+
+function import_screenshot(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            analyze_screenshot(img);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    // Reset input pour pouvoir reimporter le même fichier
+    event.target.value = '';
+}
+
+function analyze_screenshot(img) {
+    // Créer un canvas temporaire pour analyser l'image
+    const tmp = document.createElement('canvas');
+    tmp.width = img.width;
+    tmp.height = img.height;
+    const tmp_ctx = tmp.getContext('2d');
+    tmp_ctx.drawImage(img, 0, 0);
+
+    document.getElementById('wait_solving').innerText = "Analyse de l'image en cours...";
+
+    // Détecter le parchemin (couleur dorée ~RGB 200,170,100)
+    const bounds = detect_parchment(tmp_ctx, img.width, img.height);
+    if (!bounds) {
+        alert("Impossible de détecter le parchemin dans l'image !");
+        document.getElementById('wait_solving').innerText = "";
+        return;
+    }
+
+    // Détecter les hexagones dans la zone du parchemin
+    const hex_data = detect_hexagons(tmp_ctx, bounds);
+    if (!hex_data) {
+        alert("Impossible de détecter la grille hexagonale !");
+        document.getElementById('wait_solving').innerText = "";
+        return;
+    }
+
+    // Remplir la grille du solver
+    fill_grid_from_image(tmp_ctx, hex_data);
+    document.getElementById('wait_solving').innerText = "";
+}
+
+function detect_parchment(ctx, width, height) {
+    // Parcourir l'image pour trouver les bords de la zone parchemin
+    // Le parchemin a une couleur dorée : R > 180, G > 140, B < 130, R > B
+    let min_x = width, max_x = 0, min_y = height, max_y = 0;
+    const data = ctx.getImageData(0, 0, width, height).data;
+
+    for (let y = 0; y < height; y += 3) {
+        for (let x = 0; x < width; x += 3) {
+            const i = (y * width + x) * 4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            if (r > 180 && g > 130 && b < 140 && r > b + 50) {
+                if (x < min_x) min_x = x;
+                if (x > max_x) max_x = x;
+                if (y < min_y) min_y = y;
+                if (y > max_y) max_y = y;
+            }
+        }
+    }
+
+    if (max_x - min_x < 50 || max_y - min_y < 50) return null;
+
+    // Ajouter un peu de marge
+    return {
+        x: Math.max(0, min_x - 5),
+        y: Math.max(0, min_y - 5),
+        w: Math.min(width, max_x - min_x + 10),
+        h: Math.min(height, max_y - min_y + 10)
+    };
+}
+
+function detect_hexagons(ctx, bounds) {
+    // Chercher les hexagones en détectant leurs bordures grises
+    // Les bordures hex ont une couleur grise-brune foncée
+    const data = ctx.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data;
+    const w = bounds.w, h = bounds.h;
+
+    // Trouver les lignes horizontales de bordures (scan vertical)
+    // Une bordure hex = pixel plus sombre que le fond parchemin
+    let hex_rows = [];
+    let in_border = false;
+    let border_start = 0;
+
+    for (let y = 0; y < h; y++) {
+        let border_count = 0;
+        for (let x = Math.floor(w * 0.1); x < Math.floor(w * 0.9); x++) {
+            const i = (y * w + x) * 4;
+            const r = data[i], g = data[i+1], b = data[i+2];
+            // Pixel de bordure : plus sombre que le parchemin
+            if (r < 160 && g < 140 && b < 110) border_count++;
+        }
+        if (border_count > w * 0.05) {
+            if (!in_border) { border_start = y; in_border = true; }
+        } else {
+            if (in_border) {
+                hex_rows.push(Math.floor((border_start + y) / 2));
+                in_border = false;
+            }
+        }
+    }
+
+    if (hex_rows.length < 4) return null;
+
+    // Estimer la taille d'un hexagone
+    let diffs = [];
+    for (let i = 1; i < hex_rows.length; i++) diffs.push(hex_rows[i] - hex_rows[i-1]);
+    diffs.sort((a,b) => a-b);
+    const hex_height = diffs[Math.floor(diffs.length/2)]; // médiane
+
+    // Estimer la taille de la grille
+    const grid_height_px = hex_rows[hex_rows.length-1] - hex_rows[0];
+    const estimated_size = Math.round((hex_rows.length + 1) / 4) + 1;
+    const clamped_size = Math.max(3, Math.min(7, estimated_size));
+
+    return {
+        bounds: bounds,
+        hex_rows: hex_rows,
+        hex_height: hex_height,
+        grid_size: clamped_size,
+        hex_radius: hex_height * 0.6
+    };
+}
+
+function color_distance(r1, g1, b1, r2, g2, b2) {
+    return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+}
+
+function identify_aspect(ctx, cx, cy, radius) {
+    // Échantillonner les pixels autour du centre de l'hexagone
+    // et trouver la couleur dominante non-parchemin
+    const sample_size = Math.floor(radius * 0.5);
+    const pixels = ctx.getImageData(cx - sample_size, cy - sample_size, sample_size*2, sample_size*2).data;
+
+    let r_sum = 0, g_sum = 0, b_sum = 0, count = 0;
+
+    for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i], g = pixels[i+1], b = pixels[i+2];
+        // Ignorer les pixels parchemin (dorés) et très sombres
+        const is_parchment = r > 160 && g > 120 && b < 130 && r > b + 40;
+        const is_dark = r < 30 && g < 30 && b < 30;
+        if (!is_parchment && !is_dark) {
+            r_sum += r; g_sum += g; b_sum += b; count++;
+        }
+    }
+
+    if (count < 10) return null; // Pas assez de pixels colorés = case vide
+
+    const avg_r = r_sum / count;
+    const avg_g = g_sum / count;
+    const avg_b = b_sum / count;
+
+    // Trouver l'aspect le plus proche par couleur
+    let best_aspect = null;
+    let best_dist = 999;
+
+    for (const [aspect, color] of Object.entries(aspect_colors)) {
+        // Vérifier que cet aspect est dans la table active
+        if (!aspect_table.hasOwnProperty(aspect)) continue;
+        const dist = color_distance(avg_r, avg_g, avg_b, color[0], color[1], color[2]);
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_aspect = aspect;
+        }
+    }
+
+    // Seuil de confiance : si trop loin de toute couleur connue, ignorer
+    if (best_dist > 80) return null;
+    return best_aspect;
+}
+
+function fill_grid_from_image(ctx, hex_data) {
+    const { bounds, hex_height, grid_size, hex_radius } = hex_data;
+
+    // Redimensionner la grille si nécessaire
+    if (grid_size !== parseInt(document.getElementById('grid_size_input').value)) {
+        document.getElementById('grid_size_input').value = grid_size;
+        resize_grid();
+    }
+
+    // Pour chaque cellule de la grille, identifier l'aspect
+    let found_count = 0;
+    for (let i = 0; i < grid.length; i++) {
+        for (let j = 0; j < grid[i].length; j++) {
+            // Calculer la position correspondante dans l'image source
+            const cell = grid[i][j];
+            const ratio_x = (cell.x / canvas.width);
+            const ratio_y = (cell.y / canvas.height);
+            const img_x = Math.floor(bounds.x + ratio_x * bounds.w);
+            const img_y = Math.floor(bounds.y + ratio_y * bounds.h);
+
+            const aspect = identify_aspect(ctx, img_x, img_y, hex_radius);
+            if (aspect) {
+                grid[i][j].aspect = aspect;
+                found_count++;
+            }
+        }
+    }
+
+    draw_grid(grid);
+    precalculate_cell_distances();
+
+    if (found_count === 0) {
+        alert("Aucun aspect détecté. Essaie de mieux cadrer le parchemin.");
+    } else {
+        document.getElementById('wait_solving').innerText = `✓ ${found_count} aspect(s) détecté(s) !`;
+        setTimeout(() => document.getElementById('wait_solving').innerText = '', 3000);
+    }
+}
 
 </script>
 </html>
