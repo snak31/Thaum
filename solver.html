@@ -2003,273 +2003,467 @@
 		current_path = null;
 	}
 
-	// Table des couleurs des aspects (extrait du mod)
-const aspect_colors = {
-    'aer':        [0xFF, 0xFF, 0xFE],
-    'terra':      [0x56, 0x70, 0x00],
-    'ignis':      [0xFF, 0x66, 0x01],
-    'aqua':       [0x3C, 0xAE, 0xFC],
-    'ordo':       [0xD5, 0xD5, 0xAC],
-    'perditio':   [0x40, 0x40, 0x40],
-    'vacuos':     [0x88, 0x88, 0x88],
-    'lux':        [0xFF, 0xFF, 0x63],
-    'tempestas':  [0xFF, 0xFF, 0xFF],
-    'motus':      [0xCD, 0xCD, 0x74],
-    'gelum':      [0xE2, 0xE2, 0xFF],
-    'vitreus':    [0x81, 0x81, 0xFF],
-    'victus':     [0xDE, 0x34, 0x05],
-    'venenum':    [0x8A, 0x00, 0x00],
-    'potentia':   [0xC0, 0xC0, 0xFF],
-    'permutatio': [0x57, 0x87, 0x57],
-    'metallum':   [0xB5, 0x99, 0x8D],
-    'mortuus':    [0x88, 0x84, 0x88],
-    'volatus':    [0xE7, 0xC7, 0xD7],
-    'tenebrae':   [0x22, 0x22, 0x22],
-    'spiritus':   [0xEB, 0xC3, 0xFB],
-    'sano':       [0xFF, 0x63, 0x74],
-    'iter':       [0xE0, 0xAD, 0x9B],
-    'alienis':    [0x80, 0x80, 0x00],
-    'praecantatio':[0x96, 0x80, 0x00],
-    'auram':      [0xFF, 0xC0, 0xFF],
-    'vitium':     [0x80, 0x00, 0x80],
-    'limus':      [0x00, 0xF8, 0x00],
-    'herba':      [0x00, 0xAC, 0x00],
-    'arbor':      [0x87, 0x90, 0x71],
-    'bestia':     [0x9F, 0x6F, 0x09],
-    'corpus':     [0xEE, 0x82, 0xED],
-    'exanimis':   [0x3A, 0x40, 0x00],
-    'cognitio':   [0xFF, 0xC3, 0xF3],
-    'sensus':     [0x0F, 0x00, 0xFF],
-    'humanus':    [0xFF, 0xD6, 0x00],
-    'messis':     [0xE1, 0xB1, 0x71],
-    'perfodio':   [0xDC, 0xA8, 0x58],
-    'instrumentum':[0x40, 0x40, 0x6E],
-    'meto':       [0xEE, 0x82, 0x02],
-    'telum':      [0xC0, 0x60, 0x50],
-    'tutamen':    [0x00, 0xC1, 0x00],
-    'fames':      [0x9A, 0x3D, 0x05],
-    'lucrum':     [0xE6, 0xC1, 0x04],
-    'fabrico':    [0x80, 0xA0, 0x00],
-    'pannus':     [0xEB, 0x82, 0xC2],
-    'machina':    [0x80, 0x80, 0xA0],
-    'vinculum':   [0x9A, 0xC0, 0x00],
-};
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 1 — Entrée : lecture du fichier
+	// -----------------------------------------------------------------------------
 
-function import_screenshot(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+	function import_screenshot(event) {
+		const file = event.target.files[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = function(e) {
+			const img = new Image();
+			img.onload = function() { analyze_screenshot(img); };
+			img.src = e.target.result;
+		};
+		reader.readAsDataURL(file);
+		event.target.value = '';
+	}
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-            analyze_screenshot(img);
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-    // Reset input pour pouvoir reimporter le même fichier
-    event.target.value = '';
-}
 
-function analyze_screenshot(img) {
-    // Créer un canvas temporaire pour analyser l'image
-    const tmp = document.createElement('canvas');
-    tmp.width = img.width;
-    tmp.height = img.height;
-    const tmp_ctx = tmp.getContext('2d');
-    tmp_ctx.drawImage(img, 0, 0);
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 2 — Analyser le screenshot
+	// -----------------------------------------------------------------------------
 
-    document.getElementById('wait_solving').innerText = "Analyse de l'image en cours...";
+	async function analyze_screenshot(img) {
+		const wait = document.getElementById('wait_solving');
+		wait.innerHTML = '🔍 Analyse du screenshot...';
 
-    // Détecter le parchemin (couleur dorée ~RGB 200,170,100)
-    const bounds = detect_parchment(tmp_ctx, img.width, img.height);
-    if (!bounds) {
-        alert("Impossible de détecter le parchemin dans l'image !");
-        document.getElementById('wait_solving').innerText = "";
-        return;
-    }
+		// Canvas temporaire pour lire les pixels du screenshot
+		const tmp = document.createElement('canvas');
+		tmp.width  = img.width;
+		tmp.height = img.height;
+		const tmp_ctx = tmp.getContext('2d');
+		tmp_ctx.drawImage(img, 0, 0);
 
-    // Détecter les hexagones dans la zone du parchemin
-    const hex_data = detect_hexagons(tmp_ctx, bounds);
-    if (!hex_data) {
-        alert("Impossible de détecter la grille hexagonale !");
-        document.getElementById('wait_solving').innerText = "";
-        return;
-    }
+		// 1. Localiser la zone de jeu (le parchemin hexagonal)
+		const zone = detect_game_zone(tmp_ctx, img.width, img.height);
+		if (!zone) {
+			wait.innerHTML = '❌ Zone de jeu non détectée. Essaie de rogner l\'image autour du parchemin.';
+			setTimeout(() => wait.innerHTML = '', 5000);
+			return;
+		}
+		console.log('Zone détectée :', zone);
 
-    // Remplir la grille du solver
-    fill_grid_from_image(tmp_ctx, hex_data);
-    document.getElementById('wait_solving').innerText = "";
-}
+		// 2. Détecter la taille de grille et les centres des hexagones
+		const hex_layout = detect_hex_layout(tmp_ctx, zone);
+		if (!hex_layout) {
+			wait.innerHTML = '❌ Grille hexagonale non détectée.';
+			setTimeout(() => wait.innerHTML = '', 5000);
+			return;
+		}
+		console.log('Layout hex :', hex_layout);
 
-function detect_parchment(ctx, width, height) {
-    // Parcourir l'image pour trouver les bords de la zone parchemin
-    // Le parchemin a une couleur dorée : R > 180, G > 140, B < 130, R > B
-    let min_x = width, max_x = 0, min_y = height, max_y = 0;
-    const data = ctx.getImageData(0, 0, width, height).data;
+		// 3. Charger les templates d'icônes (une seule fois, mis en cache)
+		wait.innerHTML = '⏳ Chargement des templates...';
+		const templates = await load_icon_templates();
 
-    for (let y = 0; y < height; y += 3) {
-        for (let x = 0; x < width; x += 3) {
-            const i = (y * width + x) * 4;
-            const r = data[i], g = data[i+1], b = data[i+2];
-            if (r > 180 && g > 130 && b < 140 && r > b + 50) {
-                if (x < min_x) min_x = x;
-                if (x > max_x) max_x = x;
-                if (y < min_y) min_y = y;
-                if (y > max_y) max_y = y;
-            }
-        }
-    }
+		// 4. Pour chaque cellule de la grille du solver, identifier l'aspect
+		wait.innerHTML = '🔬 Identification des aspects...';
+		const results = match_grid_cells(tmp_ctx, hex_layout, templates, zone);
 
-    if (max_x - min_x < 50 || max_y - min_y < 50) return null;
+		// 5. Appliquer les résultats à la grille
+		apply_results(results, hex_layout.grid_size);
 
-    // Ajouter un peu de marge
-    return {
-        x: Math.max(0, min_x - 5),
-        y: Math.max(0, min_y - 5),
-        w: Math.min(width, max_x - min_x + 10),
-        h: Math.min(height, max_y - min_y + 10)
-    };
-}
+		const found = results.filter(r => r.aspect !== 'none' && r.aspect !== 'barred').length;
+		const barred = results.filter(r => r.aspect === 'barred').length;
+		wait.innerHTML = `✓ ${found} aspect(s) reconnu(s), ${barred} case(s) barrée(s).`;
+		setTimeout(() => wait.innerHTML = '', 4000);
+	}
 
-function detect_hexagons(ctx, bounds) {
-    // Chercher les hexagones en détectant leurs bordures grises
-    // Les bordures hex ont une couleur grise-brune foncée
-    const data = ctx.getImageData(bounds.x, bounds.y, bounds.w, bounds.h).data;
-    const w = bounds.w, h = bounds.h;
 
-    // Trouver les lignes horizontales de bordures (scan vertical)
-    // Une bordure hex = pixel plus sombre que le fond parchemin
-    let hex_rows = [];
-    let in_border = false;
-    let border_start = 0;
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 3 — Détecter la zone de jeu
+	//
+	// Le parchemin TC4 a un fond beige/doré distinctif.
+	// On cherche le rectangle englobant de tous les pixels "parchemin".
+	// -----------------------------------------------------------------------------
 
-    for (let y = 0; y < h; y++) {
-        let border_count = 0;
-        for (let x = Math.floor(w * 0.1); x < Math.floor(w * 0.9); x++) {
-            const i = (y * w + x) * 4;
-            const r = data[i], g = data[i+1], b = data[i+2];
-            // Pixel de bordure : plus sombre que le parchemin
-            if (r < 160 && g < 140 && b < 110) border_count++;
-        }
-        if (border_count > w * 0.05) {
-            if (!in_border) { border_start = y; in_border = true; }
-        } else {
-            if (in_border) {
-                hex_rows.push(Math.floor((border_start + y) / 2));
-                in_border = false;
-            }
-        }
-    }
+	function detect_game_zone(ctx, w, h) {
+		const data = ctx.getImageData(0, 0, w, h).data;
+		let min_x = w, max_x = 0, min_y = h, max_y = 0;
+		let count = 0;
 
-    if (hex_rows.length < 4) return null;
+		for (let y = 0; y < h; y += 2) {
+			for (let x = 0; x < w; x += 2) {
+				const i = (y * w + x) * 4;
+				if (is_parchment_pixel(data[i], data[i+1], data[i+2])) {
+					if (x < min_x) min_x = x;
+					if (x > max_x) max_x = x;
+					if (y < min_y) min_y = y;
+					if (y > max_y) max_y = y;
+					count++;
+				}
+			}
+		}
 
-    // Estimer la taille d'un hexagone
-    let diffs = [];
-    for (let i = 1; i < hex_rows.length; i++) diffs.push(hex_rows[i] - hex_rows[i-1]);
-    diffs.sort((a,b) => a-b);
-    const hex_height = diffs[Math.floor(diffs.length/2)]; // médiane
+		if (count < 200 || max_x - min_x < 40 || max_y - min_y < 40) {
+			// Fallback : prendre toute l'image (utile si screenshot déjà rogné)
+			return { x: 0, y: 0, w, h };
+		}
 
-    // Estimer la taille de la grille
-    const grid_height_px = hex_rows[hex_rows.length-1] - hex_rows[0];
-    const estimated_size = Math.round((hex_rows.length + 1) / 4) + 1;
-    const clamped_size = Math.max(3, Math.min(7, estimated_size));
+		const margin = 8;
+		return {
+			x: Math.max(0, min_x - margin),
+			y: Math.max(0, min_y - margin),
+			w: Math.min(w - min_x, max_x - min_x + margin * 2),
+			h: Math.min(h - min_y, max_y - min_y + margin * 2)
+		};
+	}
 
-    return {
-        bounds: bounds,
-        hex_rows: hex_rows,
-        hex_height: hex_height,
-        grid_size: clamped_size,
-        hex_radius: hex_height * 0.6
-    };
-}
+	// Un pixel est "parchemin" s'il est beige/doré : R élevé, G moyen-haut, B bas
+	function is_parchment_pixel(r, g, b) {
+		return r > 170 && g > 130 && b < 130 && r > b + 50 && r > g - 30;
+	}
 
-function color_distance(r1, g1, b1, r2, g2, b2) {
-    return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
-}
 
-function identify_aspect(ctx, cx, cy, radius) {
-    // Échantillonner les pixels autour du centre de l'hexagone
-    // et trouver la couleur dominante non-parchemin
-    const sample_size = Math.floor(radius * 0.5);
-    const pixels = ctx.getImageData(cx - sample_size, cy - sample_size, sample_size*2, sample_size*2).data;
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 4 — Détecter la disposition des hexagones
+	//
+	// Stratégie : chercher les pixels de fond de hex (bleu-gris foncé #1a2535)
+	// en scannant verticalement au centre de la zone.
+	// Chaque pic de pixels "hex-fond" = un centre de hex sur l'axe Y central.
+	// On en déduit la taille et la disposition de toute la grille.
+	// -----------------------------------------------------------------------------
 
-    let r_sum = 0, g_sum = 0, b_sum = 0, count = 0;
+	function detect_hex_layout(ctx, zone) {
+		const data = ctx.getImageData(zone.x, zone.y, zone.w, zone.h).data;
+		const w = zone.w, h = zone.h;
 
-    for (let i = 0; i < pixels.length; i += 4) {
-        const r = pixels[i], g = pixels[i+1], b = pixels[i+2];
-        // Ignorer les pixels parchemin (dorés) et très sombres
-        const is_parchment = r > 160 && g > 120 && b < 130 && r > b + 40;
-        const is_dark = r < 30 && g < 30 && b < 30;
-        if (!is_parchment && !is_dark) {
-            r_sum += r; g_sum += g; b_sum += b; count++;
-        }
-    }
+		// Scanner la colonne centrale verticalement
+		const cx = Math.floor(w / 2);
+		let hex_centers_y = [];
+		let in_hex = false;
+		let hex_start = 0;
+		let run_len = 0;
 
-    if (count < 10) return null; // Pas assez de pixels colorés = case vide
+		for (let y = 0; y < h; y++) {
+			const i = (y * w + cx) * 4;
+			const is_hex = is_hex_bg_pixel(data[i], data[i+1], data[i+2]);
+			if (is_hex) {
+				if (!in_hex) { hex_start = y; in_hex = true; }
+				run_len++;
+			} else {
+				if (in_hex && run_len > 3) {
+					hex_centers_y.push(Math.floor((hex_start + hex_start + run_len) / 2));
+				}
+				in_hex = false;
+				run_len = 0;
+			}
+		}
+		if (in_hex && run_len > 3) {
+			hex_centers_y.push(Math.floor((hex_start + hex_start + run_len) / 2));
+		}
 
-    const avg_r = r_sum / count;
-    const avg_g = g_sum / count;
-    const avg_b = b_sum / count;
+		if (hex_centers_y.length < 3) {
+			// Fallback : essai avec détection de bordures sombres
+			return detect_hex_layout_fallback(ctx, zone);
+		}
 
-    // Trouver l'aspect le plus proche par couleur
-    let best_aspect = null;
-    let best_dist = 999;
+		// La colonne centrale contient (grid_size * 2 - 1) hexagones
+		// Calculer l'espacement médian
+		const spacings = [];
+		for (let i = 1; i < hex_centers_y.length; i++) {
+			spacings.push(hex_centers_y[i] - hex_centers_y[i-1]);
+		}
+		spacings.sort((a, b) => a - b);
+		const median_spacing = spacings[Math.floor(spacings.length / 2)];
 
-    for (const [aspect, color] of Object.entries(aspect_colors)) {
-        // Vérifier que cet aspect est dans la table active
-        if (!aspect_table.hasOwnProperty(aspect)) continue;
-        const dist = color_distance(avg_r, avg_g, avg_b, color[0], color[1], color[2]);
-        if (dist < best_dist) {
-            best_dist = dist;
-            best_aspect = aspect;
-        }
-    }
+		// grid_size = (nb de hex dans colonne centrale + 1) / 2
+		const center_col_count = hex_centers_y.length;
+		const grid_size = Math.round((center_col_count + 1) / 2);
+		const clamped_size = Math.max(3, Math.min(7, grid_size));
 
-    // Seuil de confiance : si trop loin de toute couleur connue, ignorer
-    if (best_dist > 80) return null;
-    return best_aspect;
-}
+		// Rayon approximatif d'un hex
+		const hex_r = median_spacing * 0.55;
 
-function fill_grid_from_image(ctx, hex_data) {
-    const { bounds, hex_height, grid_size, hex_radius } = hex_data;
+		// Centre X et Y de la grille
+		const grid_cx = zone.x + cx;
+		const grid_cy = zone.y + hex_centers_y[Math.floor(hex_centers_y.length / 2)];
 
-    // Redimensionner la grille si nécessaire
-    if (grid_size !== parseInt(document.getElementById('grid_size_input').value)) {
-        document.getElementById('grid_size_input').value = grid_size;
-        resize_grid();
-    }
+		return {
+			grid_size: clamped_size,
+			hex_r,
+			spacing_y: median_spacing,
+			spacing_x: median_spacing * Math.sqrt(3) / 2, // pour hex pointy-top
+			center_x: grid_cx,
+			center_y: grid_cy,
+			zone
+		};
+	}
 
-    // Pour chaque cellule de la grille, identifier l'aspect
-    let found_count = 0;
-    for (let i = 0; i < grid.length; i++) {
-        for (let j = 0; j < grid[i].length; j++) {
-            // Calculer la position correspondante dans l'image source
-            const cell = grid[i][j];
-            const ratio_x = (cell.x / canvas.width);
-            const ratio_y = (cell.y / canvas.height);
-            const img_x = Math.floor(bounds.x + ratio_x * bounds.w);
-            const img_y = Math.floor(bounds.y + ratio_y * bounds.h);
+	// Fond d'une cellule TC4 : bleu-noir sombre (#1a2535 ≈ RGB 26, 37, 53)
+	function is_hex_bg_pixel(r, g, b) {
+		// Tolérance large pour couvrir différentes versions et résolutions
+		return r < 60 && g < 70 && b < 90 && b > r && b > g;
+	}
 
-            const aspect = identify_aspect(ctx, img_x, img_y, hex_radius);
-            if (aspect) {
-                grid[i][j].aspect = aspect;
-                found_count++;
-            }
-        }
-    }
+	// Fallback : si le fond hex n'est pas détectable (screenshot très compressé),
+	// on suppose que la zone entière est la grille et on estime depuis sa hauteur
+	function detect_hex_layout_fallback(ctx, zone) {
+		console.warn('detect_hex_layout: fallback mode');
+		const current_size = parseInt(document.getElementById('grid_size_input').value);
+		const total_rows = current_size * 2 - 1;
+		const spacing_y = zone.h / (total_rows + 0.5);
+		return {
+			grid_size: current_size,
+			hex_r: spacing_y * 0.5,
+			spacing_y,
+			spacing_x: spacing_y * Math.sqrt(3) / 2,
+			center_x: zone.x + zone.w / 2,
+			center_y: zone.y + zone.h / 2,
+			zone
+		};
+	}
 
-    draw_grid(grid);
-    precalculate_cell_distances();
 
-    if (found_count === 0) {
-        alert("Aucun aspect détecté. Essaie de mieux cadrer le parchemin.");
-    } else {
-        document.getElementById('wait_solving').innerText = `✓ ${found_count} aspect(s) détecté(s) !`;
-        setTimeout(() => document.getElementById('wait_solving').innerText = '', 3000);
-    }
-}
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 5 — Charger et préparer les templates d'icônes
+	//
+	// On charge chaque image depuis hq_images_black_all/ dans un canvas 32x32
+	// et on extrait ses pixels pour la comparaison.
+	// Résultat mis en cache dans icon_template_cache.
+	// -----------------------------------------------------------------------------
+
+	let icon_template_cache = null;
+
+	async function load_icon_templates() {
+		if (icon_template_cache) return icon_template_cache;
+
+		const TEMPLATE_SIZE = 32; // px — taille de normalisation
+		const templates = {};
+		const aspects = Object.keys(aspect_table);
+
+		await Promise.all(aspects.map(aspect => new Promise(resolve => {
+			const img = new Image();
+			img.crossOrigin = 'anonymous';
+			img.onload = function() {
+				const tc = document.createElement('canvas');
+				tc.width = tc.height = TEMPLATE_SIZE;
+				const tctx = tc.getContext('2d');
+				tctx.drawImage(img, 0, 0, TEMPLATE_SIZE, TEMPLATE_SIZE);
+				const pixels = tctx.getImageData(0, 0, TEMPLATE_SIZE, TEMPLATE_SIZE).data;
+				// Stocker seulement les canaux alpha+rouge (les icônes sont en blanc sur fond transparent)
+				templates[aspect] = { pixels, size: TEMPLATE_SIZE };
+				resolve();
+			};
+			img.onerror = resolve; // Ignorer les aspects sans image
+			img.src = `./ressources/images/hq_images_black_all/${aspect}.png`;
+		})));
+
+		icon_template_cache = templates;
+		console.log(`${Object.keys(templates).length} templates chargés`);
+		return templates;
+	}
+
+
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 6 — Template matching sur chaque cellule
+	//
+	// Pour chaque cellule (i, j) de la grille du solver :
+	//   1. Calculer sa position dans le screenshot
+	//   2. Découper la zone correspondante
+	//   3. Comparer avec chaque template via NCC (normalized cross-correlation)
+	//   4. Retourner l'aspect avec le meilleur score, ou 'none' si trop faible
+	// -----------------------------------------------------------------------------
+
+	function match_grid_cells(ctx, layout, templates, zone) {
+		const results = [];
+		const SAMPLE_SIZE = 32;
+		const { grid_size, hex_r, center_x, center_y } = layout;
+		const total_cols = grid_size * 2 - 1;
+
+		for (let i = 0; i < total_cols; i++) {
+			// Nombre de cellules dans cette colonne
+			const col_count = i <= Math.floor(total_cols / 2)
+				? grid_size + i
+				: total_cols - i + grid_size - 1;
+
+			// Position X de la colonne (hex flat-top)
+			// Dans draw_initial_grid, le shift_x utilise (1.5 * small_hex_len + blank_len)
+			// On approxime avec spacing_x * 1.5 * (i - mid_col)
+			const mid_col = Math.floor(total_cols / 2);
+			const col_x = center_x + (i - mid_col) * layout.spacing_x * 1.73;
+
+			// Décalage Y de la colonne (la colonne centrale commence plus haut)
+			const shift_y = (total_cols - col_count) * layout.spacing_y * 0.5;
+			const col_top_y = center_y - (col_count - 1) / 2 * layout.spacing_y;
+
+			for (let j = 0; j < col_count; j++) {
+				const cell_x = Math.round(col_x);
+				const cell_y = Math.round(col_top_y + j * layout.spacing_y);
+
+				// Vérifier si la cellule est barrée (pixel central très sombre)
+				const center_data = ctx.getImageData(
+					Math.max(0, cell_x - 2), Math.max(0, cell_y - 2), 4, 4
+				).data;
+				let center_dark = true;
+				for (let p = 0; p < center_data.length; p += 4) {
+					if (center_data[p] > 20 || center_data[p+1] > 20 || center_data[p+2] > 20) {
+						center_dark = false; break;
+					}
+				}
+				// Si fond très sombre ET pas la couleur hex normale → barred
+				const is_barred = is_barred_cell(ctx, cell_x, cell_y, hex_r);
+
+				if (is_barred) {
+					results.push({ col: i, row: j, aspect: 'barred' });
+					continue;
+				}
+
+				// Découper et redimensionner la zone de la cellule
+				const crop_size = Math.round(hex_r * 1.2);
+				const crop_x = Math.max(0, cell_x - crop_size);
+				const crop_y = Math.max(0, cell_y - crop_size);
+				const crop_w = Math.min(ctx.canvas.width - crop_x, crop_size * 2);
+				const crop_h = Math.min(ctx.canvas.height - crop_y, crop_size * 2);
+
+				if (crop_w <= 0 || crop_h <= 0) {
+					results.push({ col: i, row: j, aspect: 'none' });
+					continue;
+				}
+
+				const cell_pixels = get_resized_pixels(ctx, crop_x, crop_y, crop_w, crop_h, SAMPLE_SIZE);
+				const match = find_best_match(cell_pixels, templates, SAMPLE_SIZE);
+
+				results.push({ col: i, row: j, aspect: match.aspect, score: match.score });
+			}
+		}
+		return results;
+	}
+
+	// Détecte si une cellule est barrée :
+	// les cellules barrées dans TC4 ont un fond quasi-noir (beaucoup plus sombre que le fond normal)
+	function is_barred_cell(ctx, cx, cy, r) {
+		const sample_r = Math.max(2, Math.floor(r * 0.3));
+		const data = ctx.getImageData(
+			Math.max(0, cx - sample_r), Math.max(0, cy - sample_r),
+			sample_r * 2, sample_r * 2
+		).data;
+
+		let dark_count = 0, total = 0;
+		for (let i = 0; i < data.length; i += 4) {
+			const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+			if (brightness < 15) dark_count++;
+			total++;
+		}
+		// Plus de 80% de pixels quasi-noirs = cellule barrée
+		return total > 0 && (dark_count / total) > 0.8;
+	}
+
+	// Redimensionner un crop en SAMPLE_SIZE x SAMPLE_SIZE via canvas 2D
+	function get_resized_pixels(ctx, x, y, w, h, target_size) {
+		const tc = document.createElement('canvas');
+		tc.width = tc.height = target_size;
+		const tctx = tc.getContext('2d');
+		// Dessiner la région source redimensionnée
+		tctx.drawImage(ctx.canvas, x, y, w, h, 0, 0, target_size, target_size);
+		return tctx.getImageData(0, 0, target_size, target_size).data;
+	}
+
+
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 7 — Comparaison NCC (Normalized Cross-Correlation)
+	//
+	// NCC est robuste aux variations de luminosité globale,
+	// contrairement à la simple différence de couleur moyenne.
+	// On compare uniquement le canal alpha (présence d'icône) et la luminance.
+	// -----------------------------------------------------------------------------
+
+	function find_best_match(cell_pixels, templates, size) {
+		// D'abord vérifier si la cellule contient quelque chose
+		// (si la zone est quasi uniforme = pas d'icône)
+		const cell_luma = extract_luma(cell_pixels, size);
+		const cell_variance = variance(cell_luma);
+
+		// Variance trop faible = cellule vide (fond uniforme)
+		if (cell_variance < 80) {
+			return { aspect: 'none', score: 0 };
+		}
+
+		let best_aspect = 'none';
+		let best_score = -1;
+		const THRESHOLD = 0.35; // Score NCC minimum pour accepter un match
+
+		for (const [aspect, template] of Object.entries(templates)) {
+			if (!template.pixels) continue;
+			const tmpl_luma = extract_luma(template.pixels, size);
+			const score = ncc(cell_luma, tmpl_luma);
+			if (score > best_score) {
+				best_score = score;
+				best_aspect = aspect;
+			}
+		}
+
+		if (best_score < THRESHOLD) {
+			return { aspect: 'none', score: best_score };
+		}
+		return { aspect: best_aspect, score: best_score };
+	}
+
+	// Extraire la luminance (canal gris perceptuel) d'un tableau RGBA
+	function extract_luma(pixels, size) {
+		const luma = new Float32Array(size * size);
+		for (let i = 0; i < size * size; i++) {
+			const r = pixels[i*4], g = pixels[i*4+1], b = pixels[i*4+2], a = pixels[i*4+3];
+			// Pondération perceptuelle + modulation par alpha
+			luma[i] = (0.299*r + 0.587*g + 0.114*b) * (a / 255);
+		}
+		return luma;
+	}
+
+	// Variance d'un tableau de nombres
+	function variance(arr) {
+		const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+		return arr.reduce((s, v) => s + (v - mean) ** 2, 0) / arr.length;
+	}
+
+	// Normalized Cross-Correlation entre deux tableaux de même longueur
+	// Retourne un score entre -1 et 1 (1 = correspondance parfaite)
+	function ncc(a, b) {
+		const n = a.length;
+		let mean_a = 0, mean_b = 0;
+		for (let i = 0; i < n; i++) { mean_a += a[i]; mean_b += b[i]; }
+		mean_a /= n; mean_b /= n;
+
+		let num = 0, denom_a = 0, denom_b = 0;
+		for (let i = 0; i < n; i++) {
+			const da = a[i] - mean_a, db = b[i] - mean_b;
+			num    += da * db;
+			denom_a += da * da;
+			denom_b += db * db;
+		}
+		const denom = Math.sqrt(denom_a * denom_b);
+		return denom < 1e-6 ? 0 : num / denom;
+	}
+
+
+	// -----------------------------------------------------------------------------
+	// ÉTAPE 8 — Appliquer les résultats à la grille du solver
+	// -----------------------------------------------------------------------------
+
+	function apply_results(results, detected_grid_size) {
+		// Adapter la taille de grille si nécessaire
+		const current_size = parseInt(document.getElementById('grid_size_input').value);
+		if (detected_grid_size !== current_size) {
+			document.getElementById('grid_size_input').value = detected_grid_size;
+			resize_grid();
+		}
+
+		for (const { col, row, aspect } of results) {
+			if (col >= grid.length || row >= grid[col].length) continue;
+			if (aspect === 'barred') {
+				grid[col][row].barred = true;
+				grid[col][row].aspect = 'none';
+			} else if (aspect !== 'none') {
+				grid[col][row].aspect = aspect;
+				grid[col][row].barred = false;
+			}
+		}
+
+		draw_grid(grid);
+		precalculate_cell_distances();
+	}
 
 </script>
 </html>
